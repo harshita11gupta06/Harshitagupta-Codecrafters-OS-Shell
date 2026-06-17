@@ -112,23 +112,90 @@ public class Main {
 
             String fullCommandString = input;
 
-            // --- QUOTE-AWARE COMMAND PARSING ---
-            List<String> tokens = parseArguments(commandPart);
-            if (tokens.isEmpty()) {
-                continue;
+            // Handle background job token extraction safely prior to checking for pipeline splitting
+            boolean isBackground = false;
+            String remainingCommand = commandPart;
+            if (remainingCommand.endsWith("&")) {
+                isBackground = true;
+                remainingCommand = remainingCommand.substring(0, remainingCommand.length() - 1).trim();
             }
 
-            boolean isBackground = false;
-            if (tokens.get(tokens.size() - 1).equals("&")) {
-                isBackground = true;
-                tokens.remove(tokens.size() - 1);
+            // Check if this is a pipeline command
+            if (remainingCommand.contains("|")) {
+                String[] pipeParts = remainingCommand.split("\\|", 2);
+                List<String> tokens1 = parseArguments(pipeParts[0].trim());
+                List<String> tokens2 = parseArguments(pipeParts[1].trim());
+
+                if (!tokens1.isEmpty() && !tokens2.isEmpty()) {
+                    String exe1 = findInPath(tokens1.get(0), System.getenv("PATH"));
+                    String exe2 = findInPath(tokens2.get(0), System.getenv("PATH"));
+
+                    if (exe1 != null && exe2 != null) {
+                        try {
+                            ProcessBuilder pb1 = new ProcessBuilder(tokens1);
+                            ProcessBuilder pb2 = new ProcessBuilder(tokens2);
+
+                            pb1.directory(new File(System.getProperty("user.dir")));
+                            pb2.directory(new File(System.getProperty("user.dir")));
+
+                            pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                            pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                            if (isRedirect) {
+                                File targetFile = new File(outputFile);
+                                ProcessBuilder.Redirect fileRedirect = shouldAppend ? 
+                                        ProcessBuilder.Redirect.appendTo(targetFile) : 
+                                        ProcessBuilder.Redirect.to(targetFile);
+                                if (isStderr) {
+                                    pb2.redirectError(fileRedirect);
+                                    pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                                } else {
+                                    pb2.redirectOutput(fileRedirect);
+                                    pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+                                }
+                            } else {
+                                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                                pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+                            }
+
+                            List<Process> pipeline = ProcessBuilder.startPipeline(List.of(pb1, pb2));
+                            Process lastProcess = pipeline.get(pipeline.size() - 1);
+
+                            if (isBackground) {
+                                int assignedJobId = 1;
+                                while (true) {
+                                    boolean idTaken = false;
+                                    for (BackgroundJob j : activeJobs) {
+                                        if (j.id == assignedJobId) {
+                                            idTaken = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!idTaken) break;
+                                    assignedJobId++;
+                                }
+                                System.out.println("[" + assignedJobId + "] " + lastProcess.pid());
+                                activeJobs.add(new BackgroundJob(assignedJobId, lastProcess.pid(), fullCommandString, lastProcess));
+                            } else {
+                                for (Process p : pipeline) {
+                                    p.waitFor();
+                                }
+                            }
+                            continue;
+                        } catch (Exception e) {
+                            System.out.println("Error executing pipeline");
+                            continue;
+                        }
+                    }
+                }
             }
-            
+
+            // --- SINGLE COMMAND HANDLING ---
+            List<String> tokens = parseArguments(remainingCommand);
             if (tokens.isEmpty()) {
                 continue;
             }
             String command = tokens.get(0);
-            // ------------------------------------
 
             final boolean finalIsRedirect = isRedirect;
             final boolean finalIsStderr = isStderr;
@@ -147,7 +214,7 @@ public class Main {
                 }
             };
 
-            // 2. Check Builtins
+            // Builtins
             if (command.equals("echo")) {
                 StringBuilder sb = new StringBuilder();
                 for (int i = 1; i < tokens.size(); i++) {
@@ -161,18 +228,10 @@ public class Main {
             }
             else if (command.equals("cd")) {
                 String targetDir = tokens.size() > 1 ? tokens.get(1) : System.getenv("HOME");
-                
                 if (targetDir.equals("~")) {
                     targetDir = System.getenv("HOME");
                 }
-                
-                File directory;
-                if (targetDir.startsWith("/")) {
-                    directory = new File(targetDir);
-                } else {
-                    directory = new File(System.getProperty("user.dir"), targetDir);
-                }
-                
+                File directory = targetDir.startsWith("/") ? new File(targetDir) : new File(System.getProperty("user.dir"), targetDir);
                 if (directory.exists() && directory.isDirectory()) {
                     System.setProperty("user.dir", directory.getCanonicalPath());
                 } else {
@@ -186,7 +245,6 @@ public class Main {
                 
                 while (it.hasNext()) {
                     BackgroundJob job = it.next();
-                    
                     String marker = " ";
                     if (currentIndex == totalJobs - 1) {
                         marker = "+";
@@ -229,7 +287,7 @@ public class Main {
                     }
                 }
             } 
-            // 3. External Programs
+            // External Programs
             else {
                 String pathEnv = System.getenv("PATH");
                 String executablePath = findInPath(command, pathEnv);
@@ -260,7 +318,6 @@ public class Main {
                         Process process = pb.start();
                         
                         if (isBackground) {
-                            // --- RECYCLING JOB NUMBERS LOGIC ---
                             int assignedJobId = 1;
                             while (true) {
                                 boolean idTaken = false;
@@ -270,13 +327,9 @@ public class Main {
                                         break;
                                     }
                                 }
-                                if (!idTaken) {
-                                    break;
-                                }
+                                if (!idTaken) break;
                                 assignedJobId++;
                             }
-                            // -----------------------------------
-                            
                             System.out.println("[" + assignedJobId + "] " + process.pid());
                             activeJobs.add(new BackgroundJob(assignedJobId, process.pid(), fullCommandString, process));
                         } else {
