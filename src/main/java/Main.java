@@ -8,8 +8,22 @@ import java.util.List;
 import java.util.Scanner;
 
 public class Main {
-    // Keep track of background job sequence numbers
+    private static class BackgroundJob {
+        int id;
+        long pid;
+        String commandString;
+        Process process;
+
+        BackgroundJob(int id, long pid, String commandString, Process process) {
+            this.id = id;
+            this.pid = pid;
+            this.commandString = commandString;
+            this.process = process;
+        }
+    }
+
     private static int jobCounter = 1;
+    private static final List<BackgroundJob> activeJobs = new ArrayList<>();
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
@@ -64,17 +78,18 @@ public class Main {
             }
             // -----------------------------
 
+            String fullCommandString = commandPart;
+
             // --- QUOTE-AWARE COMMAND PARSING ---
             List<String> tokens = parseArguments(commandPart);
             if (tokens.isEmpty()) {
                 continue;
             }
 
-            // Check if the command should run in the background
             boolean isBackground = false;
             if (tokens.get(tokens.size() - 1).equals("&")) {
                 isBackground = true;
-                tokens.remove(tokens.size() - 1); // Remove the '&' token
+                tokens.remove(tokens.size() - 1);
             }
             
             if (tokens.isEmpty()) {
@@ -133,7 +148,25 @@ public class Main {
                 }
             }
             else if (command.equals("jobs")) {
-                // Empty for now as per previous stage requirements
+                // Filter down to alive jobs
+                List<BackgroundJob> livingJobs = new ArrayList<>();
+                for (BackgroundJob job : activeJobs) {
+                    if (job.process.isAlive()) {
+                        livingJobs.add(job);
+                    }
+                }
+
+                // Format markers based on recency positions
+                for (int i = 0; i < livingJobs.size(); i++) {
+                    BackgroundJob job = livingJobs.get(i);
+                    String marker = " ";
+                    if (i == livingJobs.size() - 1) {
+                        marker = "+";
+                    } else if (i == livingJobs.size() - 2) {
+                        marker = "-";
+                    }
+                    shellOut.accept("[" + job.id + "]" + marker + " Running                       " + job.commandString);
+                }
             }
             else if (command.equals("type")) {
                 if (tokens.size() > 1) {
@@ -184,11 +217,10 @@ public class Main {
                         Process process = pb.start();
                         
                         if (isBackground) {
-                            // Print [JOB_NUMBER] PID and DO NOT wait for process to finish
                             System.out.println("[" + jobCounter + "] " + process.pid());
+                            activeJobs.add(new BackgroundJob(jobCounter, process.pid(), fullCommandString, process));
                             jobCounter++;
                         } else {
-                            // Foreground process: wait normally
                             process.waitFor();
                         }
                     } catch (Exception e) {
