@@ -30,7 +30,6 @@ public class Main {
             String outputFile = null;
             String commandPart = input;
 
-            // Checked in order of length to avoid partial-matching overlaps
             String[] operators = {" 2>> ", " 1>> ", " >> ", " 2> ", " 1> ", " > "};
             for (String op : operators) {
                 if (input.contains(op)) {
@@ -119,12 +118,16 @@ public class Main {
                     shellOut.accept("cd: " + targetDir + ": No such file or directory");
                 }
             }
+            else if (command.equals("jobs")) {
+                // For this stage, an empty implementation is expected when no background jobs exist.
+                // It should produce no output and return directly to the prompt loop.
+            }
             else if (command.equals("type")) {
                 if (tokens.size() > 1) {
                     String commandToCheck = tokens.get(1);
                     if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
                         commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
-                        commandToCheck.equals("cd")) {
+                        commandToCheck.equals("cd") || commandToCheck.equals("jobs")) {
                         shellOut.accept(commandToCheck + " is a shell builtin");
                     } else {
                         String pathEnv = System.getenv("PATH");
