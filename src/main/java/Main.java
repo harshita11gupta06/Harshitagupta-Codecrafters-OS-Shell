@@ -3,14 +3,16 @@ import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        // 1. Keep the prompt from the previous stage
-        System.out.print("$ ");
-
-        // 2. Read the user's input
         Scanner scanner = new Scanner(System.in);
-        String input = scanner.nextLine();
-
-        // 3. Print the formatted error message
-        System.out.println(input + ": command not found");
+        
+        // Wrap the read-eval-print steps in an infinite loop
+        while (true) {
+            // 1. Read: Print the prompt and get input
+            System.out.print("$ ");
+            String input = scanner.nextLine();
+            
+            // 2. Eval & Print: For now, treat every command as invalid
+            System.out.println(input + ": command not found");
+        }
     }
 }
