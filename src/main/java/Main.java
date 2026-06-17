@@ -1,5 +1,3 @@
-package main.java;
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -31,6 +29,9 @@ public class Main {
         
         while (true) {
             System.out.print("$ ");
+            if (!scanner.hasNextLine()) {
+                break;
+            }
             String input = scanner.nextLine().trim();
             
             if (input.isEmpty()) {
@@ -156,7 +157,6 @@ public class Main {
                 while (it.hasNext()) {
                     BackgroundJob job = it.next();
                     
-                    // Determine current marker based on recency list positioning
                     String marker = " ";
                     if (currentIndex == totalJobs - 1) {
                         marker = "+";
@@ -170,7 +170,7 @@ public class Main {
                     } else {
                         shellOut.accept("[" + job.id + "]" + marker + " Done                        " + job.commandString);
                         it.remove();
-                        totalJobs--; // Shrink total remaining count to adjust markers dynamically for the rest
+                        totalJobs--; 
                     }
                 }
             }
