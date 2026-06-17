@@ -1,4 +1,3 @@
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -158,7 +157,6 @@ public class Main {
                 while (it.hasNext()) {
                     BackgroundJob job = it.next();
                     
-                    // Determine the marker relative to the state of the table when 'jobs' was called
                     String marker = " ";
                     if (currentIndex == totalJobs - 1) {
                         marker = "+";
@@ -167,10 +165,18 @@ public class Main {
                     }
                     
                     if (job.process.isAlive()) {
-                        shellOut.accept("[" + job.id + "]" + marker + " Running                       " + job.commandString);
+                        shellOut.accept("[" + job.id + "]" + marker + "  Running                       " + job.commandString + " &");
                     } else {
-                        shellOut.accept("[" + job.id + "]" + marker + " Done                        " + job.commandString);
-                        it.remove(); // Remove completed jobs from the list immediately after displaying
+                        // Stripping out trailing ampersands if they're still in the base command string 
+                        String cleanCommand = job.commandString;
+                        if (cleanCommand.endsWith(" &")) {
+                            cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 2).trim();
+                        } else if (cleanCommand.endsWith("&")) {
+                            cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 1).trim();
+                        }
+                        
+                        shellOut.accept("[" + job.id + "]" + marker + "  Done                 " + cleanCommand);
+                        it.remove(); 
                     }
                     currentIndex++;
                 }
