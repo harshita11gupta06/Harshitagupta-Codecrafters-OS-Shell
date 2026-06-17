@@ -28,6 +28,38 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         
         while (true) {
+            // --- AUTOMATIC REAPING BEFORE THE PROMPT ---
+            int totalJobsBeforeReap = activeJobs.size();
+            Iterator<BackgroundJob> reapIterator = activeJobs.iterator();
+            int reapIndex = 0;
+            
+            while (reapIterator.hasNext()) {
+                BackgroundJob job = reapIterator.next();
+                
+                if (!job.process.isAlive()) {
+                    String marker = " ";
+                    if (reapIndex == totalJobsBeforeReap - 1) {
+                        marker = "+";
+                    } else if (reapIndex == totalJobsBeforeReap - 2) {
+                        marker = "-";
+                    }
+                    
+                    String baseCmd = job.commandString;
+                    if (baseCmd.endsWith(" &")) {
+                        baseCmd = baseCmd.substring(0, baseCmd.length() - 2).trim();
+                    } else if (baseCmd.endsWith("&")) {
+                        baseCmd = baseCmd.substring(0, baseCmd.length() - 1).trim();
+                    }
+                    
+                    // As per requirements, automatic reap outputs go directly to standard output
+                    System.out.println("[" + job.id + "]" + marker + "  Done                 " + baseCmd);
+                    reapIterator.remove();
+                    totalJobsBeforeReap--;
+                } else {
+                    reapIndex++;
+                }
+            }
+
             System.out.print("$ ");
             if (!scanner.hasNextLine()) {
                 break;
@@ -80,7 +112,7 @@ public class Main {
             }
             // -----------------------------
 
-            String fullCommandString = input; // Keep the intact command for displaying later
+            String fullCommandString = input;
 
             // --- QUOTE-AWARE COMMAND PARSING ---
             List<String> tokens = parseArguments(commandPart);
@@ -164,7 +196,6 @@ public class Main {
                         marker = "-";
                     }
                     
-                    // Normalize the raw commands to cleanly toggle the trailing ampersand formatting
                     String baseCmd = job.commandString;
                     if (baseCmd.endsWith(" &")) {
                         baseCmd = baseCmd.substring(0, baseCmd.length() - 2).trim();
@@ -174,11 +205,12 @@ public class Main {
 
                     if (job.process.isAlive()) {
                         shellOut.accept("[" + job.id + "]" + marker + "   Running                 " + baseCmd + " &");
+                        currentIndex++;
                     } else {
                         shellOut.accept("[" + job.id + "]" + marker + "  Done                 " + baseCmd);
                         it.remove(); 
+                        totalJobs--;
                     }
-                    currentIndex++;
                 }
             }
             else if (command.equals("type")) {
