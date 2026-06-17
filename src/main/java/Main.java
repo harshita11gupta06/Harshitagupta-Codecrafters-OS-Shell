@@ -14,10 +14,8 @@ public class Main {
             System.out.print("$ ");
             String input = scanner.nextLine();
             
-            // Ignore empty "Enter" presses
             if (input.isEmpty()) continue;
             
-            // NEW: Parse the input using our custom method!
             List<String> parsedArgs = parseInput(input);
             if (parsedArgs.isEmpty()) continue;
             
@@ -26,7 +24,6 @@ public class Main {
             if (cmd.equals("exit")) {
                 break;
             } else if (cmd.equals("echo")) {
-                // Join all the arguments back together with a single space
                 System.out.println(String.join(" ", parsedArgs.subList(1, parsedArgs.size())));
             } else if (cmd.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
@@ -82,35 +79,39 @@ public class Main {
         }
     }
 
-    // NEW HELPER: Reads characters one by one to handle quotes properly!
+    // UPDATED HELPER: Now handles both Single and Double quotes!
     private static List<String> parseInput(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder currentArg = new StringBuilder();
         boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
         boolean inArg = false;
 
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
 
-            if (c == '\'') {
-                // Toggle whether we are inside single quotes
+            if (c == '\'' && !inDoubleQuotes) {
+                // Toggle single quotes only if we aren't inside double quotes
                 inSingleQuotes = !inSingleQuotes;
                 inArg = true; 
-            } else if (c == ' ' && !inSingleQuotes) {
-                // If we hit a space AND we aren't in quotes, finish the current argument
+            } else if (c == '"' && !inSingleQuotes) {
+                // Toggle double quotes only if we aren't inside single quotes
+                inDoubleQuotes = !inDoubleQuotes;
+                inArg = true;
+            } else if (c == ' ' && !inSingleQuotes && !inDoubleQuotes) {
+                // If we hit a space AND we aren't in ANY quotes, finish the current argument
                 if (inArg) {
                     args.add(currentArg.toString());
                     currentArg.setLength(0);
                     inArg = false;
                 }
             } else {
-                // Otherwise, just add the character to our current argument
+                // Otherwise, add the character to our current argument
                 currentArg.append(c);
                 inArg = true;
             }
         }
         
-        // Add the very last argument if we were building one when the line ended
         if (inArg) {
             args.add(currentArg.toString());
         }
@@ -118,7 +119,6 @@ public class Main {
         return args;
     }
 
-    // Unchanged
     private static String getPath(String cmd) {
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {
