@@ -1,4 +1,4 @@
-import java.io.ByteArrayOutputStream;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
@@ -30,7 +30,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         
         while (true) {
-            // --- AUTOMATIC REAPING BEFORE THE PROMPT ---
+            // --- AUTOMATIC REAPING ---
             int totalJobsBeforeReap = activeJobs.size();
             Iterator<BackgroundJob> reapIterator = activeJobs.iterator();
             int reapIndex = 0;
@@ -111,11 +111,9 @@ public class Main {
                     try (FileWriter fw = new FileWriter(file, true)) { }
                 }
             }
-            // -----------------------------
 
             String fullCommandString = input;
 
-            // Handle background job token extraction safely prior to checking for pipelines
             boolean isBackground = false;
             String remainingCommand = commandPart;
             if (remainingCommand.endsWith("&")) {
@@ -123,11 +121,9 @@ public class Main {
                 remainingCommand = remainingCommand.substring(0, remainingCommand.length() - 1).trim();
             }
 
-            // --- PIPELINE HANDLING (INCLUDING BUILT-INS) ---
+            // --- PIPELINE HANDLING ---
             if (remainingCommand.contains("|")) {
                 String[] pipeParts = remainingCommand.split("\\|");
-                
-                // Track standard I/O streams across the pipeline stages
                 byte[] currentInputBytes = new byte[0]; 
                 boolean pipelineFailed = false;
 
@@ -138,13 +134,10 @@ public class Main {
                     String cmd = cmdTokens.get(0);
                     boolean isLastStage = (i == pipeParts.length - 1);
 
-                    // Check if the current pipe stage is a shell builtin command
                     if (cmd.equals("echo") || cmd.equals("type") || cmd.equals("pwd") || cmd.equals("cd") || cmd.equals("jobs")) {
-                        // Gather what the builtin outputs
-                        String builtinResult = executeBuiltinToString(cmdTokens, currentInputBytes);
+                        String builtinResult = executeBuiltinToString(cmdTokens);
                         
                         if (isLastStage) {
-                            // If it's the final stage, route output to console or file redirection
                             if (isRedirect && !isStderr) {
                                 try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
                                     writer.print(builtinResult);
@@ -153,11 +146,9 @@ public class Main {
                                 System.out.print(builtinResult);
                             }
                         } else {
-                            // Pass the string result down as byte stream input for the next command stage
                             currentInputBytes = builtinResult.getBytes();
                         }
                     } else {
-                        // It's an external command stage
                         String exePath = findInPath(cmd, System.getenv("PATH"));
                         if (exePath == null) {
                             System.out.println(cmd + ": command not found");
@@ -169,7 +160,6 @@ public class Main {
                             ProcessBuilder pb = new ProcessBuilder(cmdTokens);
                             pb.directory(new File(System.getProperty("user.dir")));
                             
-                            // Let ProcessBuilder handle file redirects if it's the absolute end
                             if (isLastStage && isRedirect) {
                                 File targetFile = new File(outputFile);
                                 ProcessBuilder.Redirect fileRedirect = shouldAppend ? 
@@ -189,7 +179,6 @@ public class Main {
 
                             Process process = pb.start();
 
-                            // Write the bytes captured from previous stages directly into this process's stdin
                             if (currentInputBytes.length > 0) {
                                 try (OutputStream os = process.getOutputStream()) {
                                     os.write(currentInputBytes);
@@ -213,7 +202,6 @@ public class Main {
                                     System.out.println("[" + assignedJobId + "] " + process.pid());
                                     activeJobs.add(new BackgroundJob(assignedJobId, process.pid(), fullCommandString, process));
                                 } else {
-                                    // Read outstanding stdout if not explicitly redirected away
                                     if (!(isRedirect && !isStderr)) {
                                         try (InputStream is = process.getInputStream()) {
                                             is.transferTo(System.out);
@@ -222,7 +210,6 @@ public class Main {
                                     process.waitFor();
                                 }
                             } else {
-                                // Mid-pipeline external stage: pull and stash its complete output stream bytes
                                 try (InputStream is = process.getInputStream()) {
                                     currentInputBytes = is.readAllBytes();
                                 }
@@ -238,7 +225,7 @@ public class Main {
                 continue;
             }
 
-            // --- SINGLE COMMAND HANDLING ---
+            // --- SINGLE STANDALONE COMMANDS ---
             List<String> tokens = parseArguments(remainingCommand);
             if (tokens.isEmpty()) {
                 continue;
@@ -262,7 +249,6 @@ public class Main {
                 }
             };
 
-            // Builtins (Standalone)
             if (command.equals("echo")) {
                 StringBuilder sb = new StringBuilder();
                 for (int i = 1; i < tokens.size(); i++) {
@@ -335,7 +321,6 @@ public class Main {
                     }
                 }
             } 
-            // External Programs (Standalone)
             else {
                 String pathEnv = System.getenv("PATH");
                 String executablePath = findInPath(command, pathEnv);
@@ -390,8 +375,7 @@ public class Main {
         }
     }
 
-    // Executes a shell builtin and returns its generated output as a string (with standard Unix line breaks).
-    private static String executeBuiltinToString(List<String> tokens, byte[] pipedInput) {
+    private static String executeBuiltinToString(List<String> tokens) {
         String command = tokens.get(0);
         StringBuilder sb = new StringBuilder();
 
