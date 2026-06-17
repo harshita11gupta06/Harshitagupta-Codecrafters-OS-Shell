@@ -1,5 +1,4 @@
 
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -159,6 +158,7 @@ public class Main {
                 while (it.hasNext()) {
                     BackgroundJob job = it.next();
                     
+                    // Determine the marker relative to the state of the table when 'jobs' was called
                     String marker = " ";
                     if (currentIndex == totalJobs - 1) {
                         marker = "+";
@@ -168,12 +168,11 @@ public class Main {
                     
                     if (job.process.isAlive()) {
                         shellOut.accept("[" + job.id + "]" + marker + " Running                       " + job.commandString);
-                        currentIndex++;
                     } else {
                         shellOut.accept("[" + job.id + "]" + marker + " Done                        " + job.commandString);
-                        it.remove();
-                        totalJobs--; 
+                        it.remove(); // Remove completed jobs from the list immediately after displaying
                     }
+                    currentIndex++;
                 }
             }
             else if (command.equals("type")) {
