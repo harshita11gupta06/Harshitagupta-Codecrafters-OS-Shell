@@ -1,5 +1,6 @@
 
 
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -30,7 +31,6 @@ public class Main {
             String outputFile = null;
             String commandPart = input;
 
-            // Define the operators to check, ordered by length to prevent partial matches
             String[] operators = {" 2>> ", " 1>> ", " >> ", " 2> ", " 1> ", " > "};
             for (String op : operators) {
                 if (input.contains(op)) {
@@ -45,12 +45,25 @@ public class Main {
                     if (op.contains(">>")) {
                         shouldAppend = true;
                     }
-                    break; // Match found, stop checking
+                    break;
+                }
+            }
+
+            // Ensure parent directories and target file exist if redirecting
+            if (isRedirect && outputFile != null) {
+                File file = new File(outputFile);
+                if (file.getParentFile() != null) {
+                    file.getParentFile().mkdirs(); // Create necessary parent directories
+                }
+                // Touch/initialize the file so it always exists even if no content is written
+                if (!shouldAppend) {
+                    try (FileWriter fw = new FileWriter(file, false)) { }
+                } else if (!file.exists()) {
+                    try (FileWriter fw = new FileWriter(file, true)) { }
                 }
             }
             // -----------------------------
 
-            // Helper to handle builtin output redirection cleanly
             final boolean finalIsRedirect = isRedirect;
             final boolean finalIsStderr = isStderr;
             final boolean finalShouldAppend = shouldAppend;
@@ -65,18 +78,6 @@ public class Main {
                     }
                 } else {
                     System.out.println(text);
-                }
-            };
-
-            java.util.function.Consumer<String> shellErr = (text) -> {
-                if (finalIsRedirect && finalIsStderr) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(finalOutputFile, finalShouldAppend))) {
-                        writer.println(text);
-                    } catch (Exception e) {
-                        System.err.println(text);
-                    }
-                } else {
-                    System.err.println(text);
                 }
             };
 
