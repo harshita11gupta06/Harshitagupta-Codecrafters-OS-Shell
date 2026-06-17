@@ -1,4 +1,5 @@
 
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -18,105 +19,100 @@ public class Main {
                 continue;
             }
 
-            // 1. Check for exit
             if (input.equals("exit")) {
                 break;
             } 
 
-            // --- REDIRECTION HANDLING ---
+            // --- REDIRECTION PARSING ---
             boolean isRedirect = false;
+            boolean isStderr = false;
             boolean shouldAppend = false;
             String outputFile = null;
             String commandPart = input;
 
-            // Check for append or overwrite operators
-            if (input.contains(" >> ")) {
-                isRedirect = true;
-                shouldAppend = true;
-                int idx = input.indexOf(" >> ");
-                commandPart = input.substring(0, idx).trim();
-                outputFile = input.substring(idx + 4).trim();
-            } else if (input.contains(" 1>> ")) {
-                isRedirect = true;
-                shouldAppend = true;
-                int idx = input.indexOf(" 1>> ");
-                commandPart = input.substring(0, idx).trim();
-                outputFile = input.substring(idx + 5).trim();
-            } else if (input.contains(" > ")) {
-                isRedirect = true;
-                shouldAppend = false;
-                int idx = input.indexOf(" > ");
-                commandPart = input.substring(0, idx).trim();
-                outputFile = input.substring(idx + 3).trim();
-            } else if (input.contains(" 1> ")) {
-                isRedirect = true;
-                shouldAppend = false;
-                int idx = input.indexOf(" 1> ");
-                commandPart = input.substring(0, idx).trim();
-                outputFile = input.substring(idx + 4).trim();
+            // Define the operators to check, ordered by length to prevent partial matches
+            String[] operators = {" 2>> ", " 1>> ", " >> ", " 2> ", " 1> ", " > "};
+            for (String op : operators) {
+                if (input.contains(op)) {
+                    isRedirect = true;
+                    int idx = input.indexOf(op);
+                    commandPart = input.substring(0, idx).trim();
+                    outputFile = input.substring(idx + op.length()).trim();
+                    
+                    if (op.contains("2")) {
+                        isStderr = true;
+                    }
+                    if (op.contains(">>")) {
+                        shouldAppend = true;
+                    }
+                    break; // Match found, stop checking
+                }
             }
             // -----------------------------
 
-            // 2. Check for echo
+            // Helper to handle builtin output redirection cleanly
+            final boolean finalIsRedirect = isRedirect;
+            final boolean finalIsStderr = isStderr;
+            final boolean finalShouldAppend = shouldAppend;
+            final String finalOutputFile = outputFile;
+
+            java.util.function.Consumer<String> shellOut = (text) -> {
+                if (finalIsRedirect && !finalIsStderr) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(finalOutputFile, finalShouldAppend))) {
+                        writer.println(text);
+                    } catch (Exception e) {
+                        System.out.println(text);
+                    }
+                } else {
+                    System.out.println(text);
+                }
+            };
+
+            java.util.function.Consumer<String> shellErr = (text) -> {
+                if (finalIsRedirect && finalIsStderr) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(finalOutputFile, finalShouldAppend))) {
+                        writer.println(text);
+                    } catch (Exception e) {
+                        System.err.println(text);
+                    }
+                } else {
+                    System.err.println(text);
+                }
+            };
+
+            // 2. Check Builtins
             if (commandPart.startsWith("echo ")) {
-                String message = commandPart.substring(5);
-                if (isRedirect) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
-                        writer.println(message);
-                    }
-                } else {
-                    System.out.println(message);
-                }
+                shellOut.accept(commandPart.substring(5));
             } 
-            // 3. Check for pwd
             else if (commandPart.equals("pwd")) {
-                String currentDir = System.getProperty("user.dir");
-                if (isRedirect) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
-                        writer.println(currentDir);
-                    }
-                } else {
-                    System.out.println(currentDir);
-                }
+                shellOut.accept(System.getProperty("user.dir"));
             }
-            // 4. Check for cd
             else if (commandPart.startsWith("cd ")) {
                 String targetDir = commandPart.substring(3).trim();
                 File directory = new File(targetDir);
                 if (directory.exists() && directory.isDirectory()) {
                     System.setProperty("user.dir", directory.getAbsolutePath());
                 } else {
-                    System.out.println("cd: " + targetDir + ": No such file or directory");
+                    shellOut.accept("cd: " + targetDir + ": No such file or directory");
                 }
             }
-            // 5. Check for type
             else if (commandPart.startsWith("type ")) {
                 String commandToCheck = commandPart.substring(5).trim();
-                String result;
-                
                 if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
                     commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
                     commandToCheck.equals("cd")) {
-                    result = commandToCheck + " is a shell builtin";
+                    shellOut.accept(commandToCheck + " is a shell builtin");
                 } else {
                     String pathEnv = System.getenv("PATH");
                     String executablePath = findInPath(commandToCheck, pathEnv);
                     if (executablePath != null) {
-                        result = commandToCheck + " is " + executablePath;
+                        shellOut.accept(commandToCheck + " is " + executablePath);
                     } else {
-                        result = commandToCheck + ": not found";
+                        shellOut.accept(commandToCheck + ": not found");
                     }
-                }
-
-                if (isRedirect) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
-                        writer.println(result);
-                    }
-                } else {
-                    System.out.println(result);
                 }
             } 
-            // 6. Try running it as an external program
+            // 3. External Programs
             else {
                 String[] parts = commandPart.split(" ");
                 String command = parts[0];
@@ -136,12 +132,18 @@ public class Main {
                         pb.directory(new File(System.getProperty("user.dir")));
                         
                         if (isRedirect) {
-                            if (shouldAppend) {
-                                pb.redirectOutput(ProcessBuilder.Redirect.appendTo(new File(outputFile)));
+                            File targetFile = new File(outputFile);
+                            ProcessBuilder.Redirect fileRedirect = shouldAppend ? 
+                                    ProcessBuilder.Redirect.appendTo(targetFile) : 
+                                    ProcessBuilder.Redirect.to(targetFile);
+                            
+                            if (isStderr) {
+                                pb.redirectError(fileRedirect);
+                                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                             } else {
-                                pb.redirectOutput(ProcessBuilder.Redirect.to(new File(outputFile)));
+                                pb.redirectOutput(fileRedirect);
+                                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                             }
-                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                             pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
                         } else {
                             pb.inheritIO();
