@@ -30,6 +30,7 @@ public class Main {
             String outputFile = null;
             String commandPart = input;
 
+            // Checked in order of length to avoid partial-matching overlaps
             String[] operators = {" 2>> ", " 1>> ", " >> ", " 2> ", " 1> ", " > "};
             for (String op : operators) {
                 if (input.contains(op)) {
@@ -105,7 +106,6 @@ public class Main {
                     targetDir = System.getenv("HOME");
                 }
                 
-                // Resolve path relative to our simulated working directory if it's not absolute
                 File directory;
                 if (targetDir.startsWith("/")) {
                     directory = new File(targetDir);
@@ -114,7 +114,6 @@ public class Main {
                 }
                 
                 if (directory.exists() && directory.isDirectory()) {
-                    // Use getCanonicalPath() to correctly evaluate and remove '.' and '..'
                     System.setProperty("user.dir", directory.getCanonicalPath());
                 } else {
                     shellOut.accept("cd: " + targetDir + ": No such file or directory");
