@@ -1,7 +1,8 @@
+package main.java;
+
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -12,211 +13,145 @@ public class Main {
         
         while (true) {
             System.out.print("$ ");
-            String input = scanner.nextLine();
+            String input = scanner.nextLine().trim();
             
-            if (input.isEmpty()) continue;
-            
-            List<String> parsedArgs = parseInput(input);
-            if (parsedArgs.isEmpty()) continue;
-            
-            String stdoutFile = null;
-            String stderrFile = null;
-            
-            for (int i = 0; i < parsedArgs.size(); i++) {
-                String arg = parsedArgs.get(i);
-                if (arg.equals(">") || arg.equals("1>")) {
-                    if (i + 1 < parsedArgs.size()) {
-                        stdoutFile = parsedArgs.get(i + 1);
-                        parsedArgs.remove(i + 1);
-                        parsedArgs.remove(i);
-                        i--; 
-                    }
-                } else if (arg.equals("2>")) {
-                    if (i + 1 < parsedArgs.size()) {
-                        stderrFile = parsedArgs.get(i + 1);
-                        parsedArgs.remove(i + 1);
-                        parsedArgs.remove(i);
-                        i--; 
-                    }
-                }
-            }
-            
-            if (parsedArgs.isEmpty()) continue;
-
-            // NEW FIX: Create the files immediately so they exist even if no output/error is written!
-            if (stdoutFile != null) {
-                File f = new File(stdoutFile);
-                if (f.getParentFile() != null) f.getParentFile().mkdirs();
-                Files.writeString(f.toPath(), "");
-            }
-            if (stderrFile != null) {
-                File f = new File(stderrFile);
-                if (f.getParentFile() != null) f.getParentFile().mkdirs();
-                Files.writeString(f.toPath(), "");
+            if (input.isEmpty()) {
+                continue;
             }
 
-            String cmd = parsedArgs.get(0);
-            
-            if (cmd.equals("exit")) {
+            // 1. Check for exit
+            if (input.equals("exit")) {
                 break;
-            } else if (cmd.equals("echo")) {
-                String out = String.join(" ", parsedArgs.subList(1, parsedArgs.size()));
-                writeOutput(out, stdoutFile);
-            } else if (cmd.equals("pwd")) {
-                writeOutput(System.getProperty("user.dir"), stdoutFile);
-            } else if (cmd.equals("cd")) {
-                String dir = parsedArgs.size() > 1 ? parsedArgs.get(1) : "~";
-                if (dir.equals("~")) {
-                    String homeDir = System.getenv("HOME");
-                    if (homeDir != null) System.setProperty("user.dir", homeDir);
-                } else {
-                    Path currentPath = Paths.get(System.getProperty("user.dir"));
-                    Path newPath = currentPath.resolve(dir).normalize();
-                    if (Files.isDirectory(newPath)) {
-                        System.setProperty("user.dir", newPath.toString());
-                    } else {
-                        writeError("cd: " + dir + ": No such file or directory", stderrFile);
+            } 
+
+            // --- REDIRECTION HANDLING ---
+            boolean isAppendRedirect = false;
+            String outputFile = null;
+            String commandPart = input;
+
+            // Check for >> or 1>>
+            if (input.contains(" >> ")) {
+                isAppendRedirect = true;
+                int idx = input.indexOf(" >> ");
+                commandPart = input.substring(0, idx).trim();
+                outputFile = input.substring(idx + 4).trim();
+            } else if (input.contains(" 1>> ")) {
+                isAppendRedirect = true;
+                int idx = input.indexOf(" 1>> ");
+                commandPart = input.substring(0, idx).trim();
+                outputFile = input.substring(idx + 5).trim();
+            }
+            // -----------------------------
+
+            // 2. Check for echo
+            if (commandPart.startsWith("echo ")) {
+                String message = commandPart.substring(5);
+                if (isAppendRedirect) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, true))) {
+                        writer.println(message);
                     }
+                } else {
+                    System.out.println(message);
                 }
-            } else if (cmd.equals("type")) {
-                if (parsedArgs.size() < 2) continue;
-                String target = parsedArgs.get(1);
+            } 
+            // 3. Check for pwd
+            else if (commandPart.equals("pwd")) {
+                String currentDir = System.getProperty("user.dir");
+                if (isAppendRedirect) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, true))) {
+                        writer.println(currentDir);
+                    }
+                } else {
+                    System.out.println(currentDir);
+                }
+            }
+            // 4. Check for cd
+            else if (commandPart.startsWith("cd ")) {
+                String targetDir = commandPart.substring(3).trim();
+                File directory = new File(targetDir);
+                if (directory.exists() && directory.isDirectory()) {
+                    System.setProperty("user.dir", directory.getAbsolutePath());
+                } else {
+                    System.out.println("cd: " + targetDir + ": No such file or directory");
+                }
+            }
+            // 5. Check for type
+            else if (commandPart.startsWith("type ")) {
+                String commandToCheck = commandPart.substring(5).trim();
+                String result;
                 
-                if (target.equals("echo") || target.equals("exit") || target.equals("type") || target.equals("pwd") || target.equals("cd")) {
-                    writeOutput(target + " is a shell builtin", stdoutFile);
+                if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
+                    commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
+                    commandToCheck.equals("cd")) {
+                    result = commandToCheck + " is a shell builtin";
                 } else {
-                    String path = getPath(target);
-                    if (path != null) {
-                        writeOutput(target + " is " + path, stdoutFile);
+                    String pathEnv = System.getenv("PATH");
+                    String executablePath = findInPath(commandToCheck, pathEnv);
+                    if (executablePath != null) {
+                        result = commandToCheck + " is " + executablePath;
                     } else {
-                        writeError(target + ": not found", stderrFile);
+                        result = commandToCheck + ": not found";
                     }
                 }
-            } else {
-                String path = getPath(cmd);
-                if (path != null) {
+
+                if (isAppendRedirect) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, true))) {
+                        writer.println(result);
+                    }
+                } else {
+                    System.out.println(result);
+                }
+            } 
+            // 6. Try running it as an external program
+            else {
+                String[] parts = commandPart.split(" ");
+                String command = parts[0];
+                
+                String pathEnv = System.getenv("PATH");
+                String executablePath = findInPath(command, pathEnv);
+                
+                if (executablePath != null) {
                     try {
-                        ProcessBuilder pb = new ProcessBuilder(parsedArgs);
-                        pb.directory(new File(System.getProperty("user.dir")));
-                        
-                        if (stdoutFile != null) {
-                            File f = new File(stdoutFile);
-                            pb.redirectOutput(f);
-                        } else {
-                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                        List<String> commandWithArgs = new ArrayList<>();
+                        commandWithArgs.add(command); 
+                        for (int i = 1; i < parts.length; i++) {
+                            commandWithArgs.add(parts[i]);
                         }
                         
-                        if (stderrFile != null) {
-                            File f = new File(stderrFile);
-                            pb.redirectError(f);
-                        } else {
+                        ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
+                        pb.directory(new File(System.getProperty("user.dir")));
+                        
+                        if (isAppendRedirect) {
+                            // Redirect standard output to append mode for the file
+                            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(new File(outputFile)));
                             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                        } else {
+                            pb.inheritIO();
                         }
                         
                         Process process = pb.start();
                         process.waitFor();
                     } catch (Exception e) {
-                        writeError(cmd + ": command not found", stderrFile);
+                        System.out.println(command + ": command not found");
                     }
                 } else {
-                    writeError(cmd + ": command not found", stderrFile);
+                    System.out.println(command + ": command not found");
                 }
             }
         }
     }
 
-    private static void writeOutput(String output, String redirectFile) {
-        if (redirectFile != null) {
-            try {
-                File f = new File(redirectFile);
-                Files.writeString(f.toPath(), output + "\n");
-            } catch (Exception e) {
-                System.out.println("Error writing to file");
-            }
-        } else {
-            System.out.println(output);
+    private static String findInPath(String command, String pathEnv) {
+        if (pathEnv == null || pathEnv.isEmpty()) {
+            return null;
         }
-    }
 
-    private static void writeError(String errorMsg, String redirectFile) {
-        if (redirectFile != null) {
-            try {
-                File f = new File(redirectFile);
-                Files.writeString(f.toPath(), errorMsg + "\n");
-            } catch (Exception e) {
-                System.out.println("Error writing to file");
-            }
-        } else {
-            System.out.println(errorMsg);
-        }
-    }
-
-    private static List<String> parseInput(String input) {
-        List<String> args = new ArrayList<>();
-        StringBuilder currentArg = new StringBuilder();
-        boolean inSingleQuotes = false;
-        boolean inDoubleQuotes = false;
-        boolean inArg = false;
-
-        for (int i = 0; i < input.length(); i++) {
-            char c = input.charAt(i);
-
-            if (c == '\'' && !inDoubleQuotes) {
-                inSingleQuotes = !inSingleQuotes;
-                inArg = true; 
-            } else if (c == '"' && !inSingleQuotes) {
-                inDoubleQuotes = !inDoubleQuotes;
-                inArg = true;
-            } else if (c == '\\') {
-                if (inSingleQuotes) {
-                    currentArg.append(c);
-                } else if (inDoubleQuotes) {
-                    if (i + 1 < input.length()) {
-                        char next = input.charAt(i + 1);
-                        if (next == '"' || next == '\\') {
-                            currentArg.append(next);
-                            i++; 
-                        } else {
-                            currentArg.append(c); 
-                        }
-                    } else {
-                        currentArg.append(c);
-                    }
-                } else {
-                    if (i + 1 < input.length()) {
-                        currentArg.append(input.charAt(i + 1));
-                        i++; 
-                    }
-                }
-                inArg = true;
-            } else if (c == ' ' && !inSingleQuotes && !inDoubleQuotes) {
-                if (inArg) {
-                    args.add(currentArg.toString());
-                    currentArg.setLength(0);
-                    inArg = false;
-                }
-            } else {
-                currentArg.append(c);
-                inArg = true;
-            }
-        }
-        
-        if (inArg) {
-            args.add(currentArg.toString());
-        }
-        
-        return args;
-    }
-
-    private static String getPath(String cmd) {
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv != null) {
-            String[] paths = pathEnv.split(File.pathSeparator);
-            for (String dir : paths) {
-                Path filePath = Paths.get(dir, cmd);
-                if (Files.isRegularFile(filePath) && Files.isExecutable(filePath)) {
-                    return filePath.toString();
-                }
+        String[] directories = pathEnv.split(File.pathSeparator);
+        for (String directory : directories) {
+            File file = new File(directory, command);
+            if (file.exists() && file.canExecute()) {
+                return file.getAbsolutePath();
             }
         }
         return null;
