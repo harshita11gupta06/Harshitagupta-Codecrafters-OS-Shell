@@ -80,7 +80,7 @@ public class Main {
             }
             // -----------------------------
 
-            String fullCommandString = commandPart;
+            String fullCommandString = input; // Keep the intact command for displaying later
 
             // --- QUOTE-AWARE COMMAND PARSING ---
             List<String> tokens = parseArguments(commandPart);
@@ -164,18 +164,18 @@ public class Main {
                         marker = "-";
                     }
                     
+                    // Normalize the raw commands to cleanly toggle the trailing ampersand formatting
+                    String baseCmd = job.commandString;
+                    if (baseCmd.endsWith(" &")) {
+                        baseCmd = baseCmd.substring(0, baseCmd.length() - 2).trim();
+                    } else if (baseCmd.endsWith("&")) {
+                        baseCmd = baseCmd.substring(0, baseCmd.length() - 1).trim();
+                    }
+
                     if (job.process.isAlive()) {
-                        shellOut.accept("[" + job.id + "]" + marker + "  Running                       " + job.commandString + " &");
+                        shellOut.accept("[" + job.id + "]" + marker + "   Running                 " + baseCmd + " &");
                     } else {
-                        // Stripping out trailing ampersands if they're still in the base command string 
-                        String cleanCommand = job.commandString;
-                        if (cleanCommand.endsWith(" &")) {
-                            cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 2).trim();
-                        } else if (cleanCommand.endsWith("&")) {
-                            cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 1).trim();
-                        }
-                        
-                        shellOut.accept("[" + job.id + "]" + marker + "  Done                 " + cleanCommand);
+                        shellOut.accept("[" + job.id + "]" + marker + "  Done                 " + baseCmd);
                         it.remove(); 
                     }
                     currentIndex++;
