@@ -28,16 +28,28 @@ public class Main {
             } 
             // 3. Check for pwd
             else if (input.equals("pwd")) {
-                // Fetch and print the current working directory
-                String currentDir = System.getProperty("user.dir");
-                System.out.println(currentDir);
+                System.out.println(System.getProperty("user.dir"));
             }
-            // 4. Check for type (Make sure to update type to recognize "pwd" too!)
+            // 4. Check for cd
+            else if (input.startsWith("cd ")) {
+                String targetDir = input.substring(3).trim();
+                File directory = new File(targetDir);
+                
+                // For this stage, we assume absolute paths (starting with '/')
+                if (directory.exists() && directory.isDirectory()) {
+                    // Update Java's user.dir property so 'pwd' reflects the change
+                    System.setProperty("user.dir", directory.getAbsolutePath());
+                } else {
+                    System.out.println("cd: " + targetDir + ": No such file or directory");
+                }
+            }
+            // 5. Check for type (Make sure to update type to recognize "cd" too!)
             else if (input.startsWith("type ")) {
                 String commandToCheck = input.substring(5).trim();
                 
                 if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
-                    commandToCheck.equals("type") || commandToCheck.equals("pwd")) {
+                    commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
+                    commandToCheck.equals("cd")) {
                     System.out.println(commandToCheck + " is a shell builtin");
                 } else {
                     String pathEnv = System.getenv("PATH");
@@ -50,7 +62,7 @@ public class Main {
                     }
                 }
             } 
-            // 5. Try running it as an external program
+            // 6. Try running it as an external program
             else {
                 String[] parts = input.split(" ");
                 String command = parts[0];
@@ -67,6 +79,11 @@ public class Main {
                         }
                         
                         ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
+                        
+                        // Crucial: Set the working directory for external commands 
+                        // to match the updated simulated shell directory!
+                        pb.directory(new File(System.getProperty("user.dir")));
+                        
                         pb.inheritIO();
                         Process process = pb.start();
                         process.waitFor();
