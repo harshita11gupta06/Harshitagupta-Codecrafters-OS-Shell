@@ -1,8 +1,7 @@
-
-
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Scanner;
 
 public class Main {
@@ -11,102 +10,70 @@ public class Main {
         
         while (true) {
             System.out.print("$ ");
-            String input = scanner.nextLine().trim();
+            String input = scanner.nextLine();
             
-            if (input.isEmpty()) {
-                continue;
-            }
-
-            // 1. Check for exit
             if (input.equals("exit")) {
                 break;
-            } 
-            // 2. Check for echo
-            else if (input.startsWith("echo ")) {
-                String message = input.substring(5);
-                System.out.println(message);
-            } 
-            // 3. Check for pwd
-            else if (input.equals("pwd")) {
+            } else if (input.startsWith("echo ")) {
+                System.out.println(input.substring(5));
+            } else if (input.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
-            }
-            // 4. Check for cd
-            else if (input.startsWith("cd ")) {
-                String targetDir = input.substring(3).trim();
-                File directory = new File(targetDir);
+            } else if (input.startsWith("cd ")) {
+                String dir = input.substring(3);
                 
-                // For this stage, we assume absolute paths (starting with '/')
-                if (directory.exists() && directory.isDirectory()) {
-                    // Update Java's user.dir property so 'pwd' reflects the change
-                    System.setProperty("user.dir", directory.getAbsolutePath());
+                // NEW: Calculate the relative or absolute path based on where we currently are
+                Path currentPath = Paths.get(System.getProperty("user.dir"));
+                Path newPath = currentPath.resolve(dir).normalize();
+                
+                if (Files.isDirectory(newPath)) {
+                    System.setProperty("user.dir", newPath.toString());
                 } else {
-                    System.out.println("cd: " + targetDir + ": No such file or directory");
+                    System.out.println("cd: " + dir + ": No such file or directory");
                 }
-            }
-            // 5. Check for type (Make sure to update type to recognize "cd" too!)
-            else if (input.startsWith("type ")) {
-                String commandToCheck = input.substring(5).trim();
+            } else if (input.startsWith("type ")) {
+                String cmd = input.substring(5);
                 
-                if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
-                    commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
-                    commandToCheck.equals("cd")) {
-                    System.out.println(commandToCheck + " is a shell builtin");
+                if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type") || cmd.equals("pwd") || cmd.equals("cd")) {
+                    System.out.println(cmd + " is a shell builtin");
                 } else {
-                    String pathEnv = System.getenv("PATH");
-                    String executablePath = findInPath(commandToCheck, pathEnv);
-                    
-                    if (executablePath != null) {
-                        System.out.println(commandToCheck + " is " + executablePath);
+                    String path = getPath(cmd);
+                    if (path != null) {
+                        System.out.println(cmd + " is " + path);
                     } else {
-                        System.out.println(commandToCheck + ": not found");
+                        System.out.println(cmd + ": not found");
                     }
                 }
-            } 
-            // 6. Try running it as an external program
-            else {
+            } else {
                 String[] parts = input.split(" ");
-                String command = parts[0];
+                String cmd = parts[0];
+                String path = getPath(cmd);
                 
-                String pathEnv = System.getenv("PATH");
-                String executablePath = findInPath(command, pathEnv);
-                
-                if (executablePath != null) {
+                if (path != null) {
                     try {
-                        List<String> commandWithArgs = new ArrayList<>();
-                        commandWithArgs.add(command); 
-                        for (int i = 1; i < parts.length; i++) {
-                            commandWithArgs.add(parts[i]);
-                        }
-                        
-                        ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
-                        
-                        // Crucial: Set the working directory for external commands 
-                        // to match the updated simulated shell directory!
+                        ProcessBuilder pb = new ProcessBuilder(parts);
                         pb.directory(new File(System.getProperty("user.dir")));
-                        
                         pb.inheritIO();
                         Process process = pb.start();
                         process.waitFor();
                     } catch (Exception e) {
-                        System.out.println(command + ": command not found");
+                        System.out.println(input + ": command not found");
                     }
                 } else {
-                    System.out.println(command + ": command not found");
+                    System.out.println(input + ": command not found");
                 }
             }
         }
     }
 
-    private static String findInPath(String command, String pathEnv) {
-        if (pathEnv == null || pathEnv.isEmpty()) {
-            return null;
-        }
-
-        String[] directories = pathEnv.split(File.pathSeparator);
-        for (String directory : directories) {
-            File file = new File(directory, command);
-            if (file.exists() && file.canExecute()) {
-                return file.getAbsolutePath();
+    private static String getPath(String cmd) {
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null) {
+            String[] paths = pathEnv.split(File.pathSeparator);
+            for (String dir : paths) {
+                Path filePath = Paths.get(dir, cmd);
+                if (Files.isRegularFile(filePath) && Files.isExecutable(filePath)) {
+                    return filePath.toString();
+                }
             }
         }
         return null;
