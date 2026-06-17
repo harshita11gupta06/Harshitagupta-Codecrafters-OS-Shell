@@ -79,7 +79,7 @@ public class Main {
         }
     }
 
-    // UPDATED HELPER: Now handles Backslashes outside quotes!
+    // UPDATED HELPER: Now fully handles backslashes based on quote context!
     private static List<String> parseInput(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder currentArg = new StringBuilder();
@@ -96,13 +96,31 @@ public class Main {
             } else if (c == '"' && !inSingleQuotes) {
                 inDoubleQuotes = !inDoubleQuotes;
                 inArg = true;
-            } else if (c == '\\' && !inSingleQuotes && !inDoubleQuotes) {
-                // NEW: Handle backslash escaping outside quotes
-                if (i + 1 < input.length()) {
-                    currentArg.append(input.charAt(i + 1)); // Append the escaped character
-                    i++; // Skip the character we just escaped so the loop doesn't read it again
-                    inArg = true;
+            } else if (c == '\\') {
+                if (inSingleQuotes) {
+                    // Inside single quotes, backslash is always literal
+                    currentArg.append(c);
+                } else if (inDoubleQuotes) {
+                    // Inside double quotes, it only escapes " and \
+                    if (i + 1 < input.length()) {
+                        char next = input.charAt(i + 1);
+                        if (next == '"' || next == '\\') {
+                            currentArg.append(next);
+                            i++; // Skip the escaped character
+                        } else {
+                            currentArg.append(c); // Literal backslash
+                        }
+                    } else {
+                        currentArg.append(c);
+                    }
+                } else {
+                    // Outside quotes, it escapes everything
+                    if (i + 1 < input.length()) {
+                        currentArg.append(input.charAt(i + 1));
+                        i++; // Skip the escaped character
+                    }
                 }
+                inArg = true;
             } else if (c == ' ' && !inSingleQuotes && !inDoubleQuotes) {
                 if (inArg) {
                     args.add(currentArg.toString());
