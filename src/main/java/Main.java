@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
 
@@ -148,24 +149,34 @@ public class Main {
                 }
             }
             else if (command.equals("jobs")) {
-                // Filter down to alive jobs
-                List<BackgroundJob> livingJobs = new ArrayList<>();
+                // Determine layout markers relative to the total living tracking pool
+                int livingCount = 0;
                 for (BackgroundJob job : activeJobs) {
                     if (job.process.isAlive()) {
-                        livingJobs.add(job);
+                        livingCount++;
                     }
                 }
 
-                // Format markers based on recency positions
-                for (int i = 0; i < livingJobs.size(); i++) {
-                    BackgroundJob job = livingJobs.get(i);
-                    String marker = " ";
-                    if (i == livingJobs.size() - 1) {
-                        marker = "+";
-                    } else if (i == livingJobs.size() - 2) {
-                        marker = "-";
+                int livingIndex = 0;
+                Iterator<BackgroundJob> it = activeJobs.iterator();
+                while (it.hasNext()) {
+                    BackgroundJob job = it.next();
+                    
+                    if (job.process.isAlive()) {
+                        String marker = " ";
+                        if (livingIndex == livingCount - 1) {
+                            marker = "+";
+                        } else if (livingIndex == livingCount - 2) {
+                            marker = "-";
+                        }
+                        shellOut.accept("[" + job.id + "]" + marker + " Running                       " + job.commandString);
+                        livingIndex++;
+                    } else {
+                        // The process has exited: output status as "Done" and remove it from tracking
+                        // By default, the most recent completed job gets the '+' marker
+                        shellOut.accept("[" + job.id + "]+ Done                        " + job.commandString);
+                        it.remove();
                     }
-                    shellOut.accept("[" + job.id + "]" + marker + " Running                       " + job.commandString);
                 }
             }
             else if (command.equals("type")) {
