@@ -1,6 +1,5 @@
 
 
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -49,13 +48,11 @@ public class Main {
                 }
             }
 
-            // Ensure parent directories and target file exist if redirecting
             if (isRedirect && outputFile != null) {
                 File file = new File(outputFile);
                 if (file.getParentFile() != null) {
-                    file.getParentFile().mkdirs(); // Create necessary parent directories
+                    file.getParentFile().mkdirs();
                 }
-                // Touch/initialize the file so it always exists even if no content is written
                 if (!shouldAppend) {
                     try (FileWriter fw = new FileWriter(file, false)) { }
                 } else if (!file.exists()) {
@@ -63,6 +60,14 @@ public class Main {
                 }
             }
             // -----------------------------
+
+            // --- QUOTE-AWARE COMMAND PARSING ---
+            List<String> tokens = parseArguments(commandPart);
+            if (tokens.isEmpty()) {
+                continue;
+            }
+            String command = tokens.get(0);
+            // ------------------------------------
 
             final boolean finalIsRedirect = isRedirect;
             final boolean finalIsStderr = isStderr;
@@ -82,14 +87,19 @@ public class Main {
             };
 
             // 2. Check Builtins
-            if (commandPart.startsWith("echo ")) {
-                shellOut.accept(commandPart.substring(5));
+            if (command.equals("echo")) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 1; i < tokens.size(); i++) {
+                    sb.append(tokens.get(i));
+                    if (i < tokens.size() - 1) sb.append(" ");
+                }
+                shellOut.accept(sb.toString());
             } 
-            else if (commandPart.equals("pwd")) {
+            else if (command.equals("pwd")) {
                 shellOut.accept(System.getProperty("user.dir"));
             }
-            else if (commandPart.startsWith("cd ")) {
-                String targetDir = commandPart.substring(3).trim();
+            else if (command.equals("cd")) {
+                String targetDir = tokens.size() > 1 ? tokens.get(1) : System.getenv("HOME");
                 File directory = new File(targetDir);
                 if (directory.exists() && directory.isDirectory()) {
                     System.setProperty("user.dir", directory.getAbsolutePath());
@@ -97,39 +107,32 @@ public class Main {
                     shellOut.accept("cd: " + targetDir + ": No such file or directory");
                 }
             }
-            else if (commandPart.startsWith("type ")) {
-                String commandToCheck = commandPart.substring(5).trim();
-                if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
-                    commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
-                    commandToCheck.equals("cd")) {
-                    shellOut.accept(commandToCheck + " is a shell builtin");
-                } else {
-                    String pathEnv = System.getenv("PATH");
-                    String executablePath = findInPath(commandToCheck, pathEnv);
-                    if (executablePath != null) {
-                        shellOut.accept(commandToCheck + " is " + executablePath);
+            else if (command.equals("type")) {
+                if (tokens.size() > 1) {
+                    String commandToCheck = tokens.get(1);
+                    if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
+                        commandToCheck.equals("type") || commandToCheck.equals("pwd") || 
+                        commandToCheck.equals("cd")) {
+                        shellOut.accept(commandToCheck + " is a shell builtin");
                     } else {
-                        shellOut.accept(commandToCheck + ": not found");
+                        String pathEnv = System.getenv("PATH");
+                        String executablePath = findInPath(commandToCheck, pathEnv);
+                        if (executablePath != null) {
+                            shellOut.accept(commandToCheck + " is " + executablePath);
+                        } else {
+                            shellOut.accept(commandToCheck + ": not found");
+                        }
                     }
                 }
             } 
             // 3. External Programs
             else {
-                String[] parts = commandPart.split(" ");
-                String command = parts[0];
-                
                 String pathEnv = System.getenv("PATH");
                 String executablePath = findInPath(command, pathEnv);
                 
                 if (executablePath != null) {
                     try {
-                        List<String> commandWithArgs = new ArrayList<>();
-                        commandWithArgs.add(command); 
-                        for (int i = 1; i < parts.length; i++) {
-                            commandWithArgs.add(parts[i]);
-                        }
-                        
-                        ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
+                        ProcessBuilder pb = new ProcessBuilder(tokens);
                         pb.directory(new File(System.getProperty("user.dir")));
                         
                         if (isRedirect) {
@@ -160,6 +163,55 @@ public class Main {
                 }
             }
         }
+    }
+
+    // Helper method to parse strings supporting single and double quotes
+    private static List<String> parseArguments(String commandPart) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder currentToken = new StringBuilder();
+        boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < commandPart.length(); i++) {
+            char c = commandPart.charAt(i);
+
+            if (escaped) {
+                currentToken.append(c);
+                escaped = false;
+            } else if (c == '\\' && !inSingleQuotes) {
+                if (inDoubleQuotes) {
+                    // Inside double quotes, only specific characters can be escaped
+                    if (i + 1 < commandPart.length()) {
+                        char next = commandPart.charAt(i + 1);
+                        if (next == '$' || next == '`' || next == '"' || next == '\\' || next == '\n') {
+                            escaped = true;
+                        } else {
+                            currentToken.append(c);
+                        }
+                    } else {
+                        currentToken.append(c);
+                    }
+                } else {
+                    escaped = true;
+                }
+            } else if (c == '\'' && !inDoubleQuotes) {
+                inSingleQuotes = !inSingleQuotes;
+            } else if (c == '"' && !inSingleQuotes) {
+                inDoubleQuotes = !inDoubleQuotes;
+            } else if (Character.isWhitespace(c) && !inSingleQuotes && !inDoubleQuotes) {
+                if (currentToken.length() > 0) {
+                    tokens.add(currentToken.toString());
+                    currentToken.setLength(0);
+                }
+            } else {
+                currentToken.append(c);
+            }
+        }
+        if (currentToken.length() > 0) {
+            tokens.add(currentToken.toString());
+        }
+        return tokens;
     }
 
     private static String findInPath(String command, String pathEnv) {
