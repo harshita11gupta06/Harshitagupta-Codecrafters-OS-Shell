@@ -21,14 +21,22 @@ public class Main {
             } else if (input.startsWith("cd ")) {
                 String dir = input.substring(3);
                 
-                // NEW: Calculate the relative or absolute path based on where we currently are
-                Path currentPath = Paths.get(System.getProperty("user.dir"));
-                Path newPath = currentPath.resolve(dir).normalize();
-                
-                if (Files.isDirectory(newPath)) {
-                    System.setProperty("user.dir", newPath.toString());
+                // NEW: Handle the '~' character to jump to the HOME directory
+                if (dir.equals("~")) {
+                    String homeDir = System.getenv("HOME");
+                    if (homeDir != null) {
+                        System.setProperty("user.dir", homeDir);
+                    }
                 } else {
-                    System.out.println("cd: " + dir + ": No such file or directory");
+                    // Keep the previous logic for absolute and relative paths
+                    Path currentPath = Paths.get(System.getProperty("user.dir"));
+                    Path newPath = currentPath.resolve(dir).normalize();
+                    
+                    if (Files.isDirectory(newPath)) {
+                        System.setProperty("user.dir", newPath.toString());
+                    } else {
+                        System.out.println("cd: " + dir + ": No such file or directory");
+                    }
                 }
             } else if (input.startsWith("type ")) {
                 String cmd = input.substring(5);
