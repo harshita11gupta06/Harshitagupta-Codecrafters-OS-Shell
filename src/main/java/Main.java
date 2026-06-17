@@ -1,9 +1,5 @@
-
-
 import java.io.File;
 import java.io.FileWriter;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.util.Scanner;
 import java.util.ArrayList;
@@ -125,35 +121,21 @@ public class Main {
             // --- PIPELINE HANDLING ---
             if (remainingCommand.contains("|")) {
                 String[] pipeParts = remainingCommand.split("\\|");
-                List<Process> processes = new ArrayList<>();
-                List<Thread> streamThreads = new ArrayList<>();
+                List<ProcessBuilder> builders = new ArrayList<>();
                 boolean pipelineFailed = false;
 
-                // First pass: Spawn all processes and connect external commands via ProcessBuilder pipelines if possible,
-                // or fall back to manual async stream copying to support real-time streaming (like tail -f | head)
                 for (int i = 0; i < pipeParts.length; i++) {
-                    List<String> cmdTokens = parseArguments(pipeParts[i].trim());
+                    String stageStr = pipeParts[i].trim();
+                    List<String> cmdTokens = parseArguments(stageStr);
                     if (cmdTokens.isEmpty()) continue;
                     
                     String cmd = cmdTokens.get(0);
                     boolean isLastStage = (i == pipeParts.length - 1);
 
-                    if (cmd.equals("echo") || cmd.equals("type") || cmd.equals("pwd") || cmd.equals("cd") || cmd.equals("jobs")) {
-                        // Builtin output logic handled separately or dumped into strings if needed.
-                        // However, to keep streaming simple for tests targeting external pipeline binaries:
-                        String builtinResult = executeBuiltinToString(cmdTokens);
-                        if (isLastStage) {
-                            if (isRedirect && !isStderr) {
-                                try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
-                                    writer.print(builtinResult);
-                                } catch (Exception e) {}
-                            } else {
-                                System.out.print(builtinResult);
-                            }
-                        } else {
-                            // Convert builtin text into an artificial stream if inputting to another stage
-                            // For complex mixed pipes, standard ProcessBuilder.startPipeline requires native commands.
-                        }
+                    ProcessBuilder pb;
+                    // If it's a built-in, run it via sh -c so ProcessBuilder can pipeline it natively
+                    if (cmd.equals("echo") || cmd.equals("type") || cmd.equals("pwd") || cmd.equals("jobs")) {
+                        pb = new ProcessBuilder("sh", "-c", stageStr);
                     } else {
                         String exePath = findInPath(cmd, System.getenv("PATH"));
                         if (exePath == null) {
@@ -161,107 +143,58 @@ public class Main {
                             pipelineFailed = true;
                             break;
                         }
-
-                        try {
-                            ProcessBuilder pb = new ProcessBuilder(cmdTokens);
-                            pb.directory(new File(System.getProperty("user.dir")));
-                            
-                            // Setup redirects
-                            if (isLastStage && isRedirect) {
-                                File targetFile = new File(outputFile);
-                                ProcessBuilder.Redirect fileRedirect = shouldAppend ? 
-                                        ProcessBuilder.Redirect.appendTo(targetFile) : 
-                                        ProcessBuilder.Redirect.to(targetFile);
-                                if (isStderr) {
-                                    pb.redirectError(fileRedirect);
-                                    pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
-                                } else {
-                                    pb.redirectOutput(fileRedirect);
-                                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                                }
-                            } else {
-                                pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
-                                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                            }
-                            
-                            // If it's not the first command, handle its standard input using a pipe to write to it dynamically
-                            pb.redirectInput(ProcessBuilder.Redirect.PIPE);
-
-                            Process process = pb.start();
-                            processes.add(process);
-                        } catch (Exception e) {
-                            System.out.println("Error executing command stage: " + cmd);
-                            pipelineFailed = true;
-                            break;
-                        }
+                        pb = new ProcessBuilder(cmdTokens);
                     }
+
+                    pb.directory(new File(System.getProperty("user.dir")));
+
+                    // Apply standard file redirections to the absolute final stage of the pipe
+                    if (isLastStage && isRedirect) {
+                        File targetFile = new File(outputFile);
+                        ProcessBuilder.Redirect fileRedirect = shouldAppend ? 
+                                ProcessBuilder.Redirect.appendTo(targetFile) : 
+                                ProcessBuilder.Redirect.to(targetFile);
+                        if (isStderr) {
+                            pb.redirectError(fileRedirect);
+                        } else {
+                            pb.redirectOutput(fileRedirect);
+                        }
+                    } else if (isLastStage) {
+                        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                    }
+
+                    builders.add(pb);
                 }
 
-                if (!pipelineFailed && !processes.isEmpty()) {
-                    // Chain the outputs to inputs concurrently to support real-time commands like tail -f
-                    for (int i = 0; i < processes.size() - 1; i++) {
-                        final InputStream inputSrc = processes.get(i).getInputStream();
-                        final OutputStream outputDest = processes.get(i + 1).getOutputStream();
-                        
-                        Thread t = new Thread(() -> {
-                            try (inputSrc; outputDest) {
-                                byte[] buffer = new byte[4096];
-                                int read;
-                                while ((read = inputSrc.read(buffer)) != -1) {
-                                    outputDest.write(buffer, 0, read);
-                                    outputDest.flush();
-                                }
-                            } catch (Exception ignored) {}
-                        });
-                        t.setDaemon(true);
-                        t.start();
-                        streamThreads.add(t);
-                    }
-
-                    // Close the first process's stdin since nothing feeds into the top of the pipe
+                if (!pipelineFailed && !builders.isEmpty()) {
                     try {
-                        processes.get(0).getOutputStream().close();
-                    } catch (Exception ignored) {}
+                        // Launch native OS pipeline chain seamlessly
+                        List<Process> pipeline = ProcessBuilder.startPipeline(builders);
+                        Process lastProcess = pipeline.get(pipeline.size() - 1);
 
-                    Process lastProcess = processes.get(processes.size() - 1);
-
-                    if (isLastStageRedirectAndNotStderr(isRedirect, isStderr)) {
-                        // Handled by ProcessBuilder file redirection
-                    } else {
-                        // Stream the final process stdout to the user terminal console immediately
-                        Thread termThread = new Thread(() -> {
-                            try (InputStream lastOut = lastProcess.getInputStream()) {
-                                lastOut.transferTo(System.out);
-                            } catch (Exception ignored) {}
-                        });
-                        termThread.setDaemon(true);
-                        termThread.start();
-                        streamThreads.add(termThread);
-                    }
-
-                    if (isBackground) {
-                        int assignedJobId = 1;
-                        while (true) {
-                            boolean idTaken = false;
-                            for (BackgroundJob j : activeJobs) {
-                                if (j.id == assignedJobId) { idTaken = true; break; }
+                        if (isBackground) {
+                            int assignedJobId = 1;
+                            while (true) {
+                                boolean idTaken = false;
+                                for (BackgroundJob j : activeJobs) {
+                                    if (j.id == assignedJobId) { idTaken = true; break; }
+                                }
+                                if (!idTaken) break;
+                                assignedJobId++;
                             }
-                            if (!idTaken) break;
-                            assignedJobId++;
-                        }
-                        System.out.println("[" + assignedJobId + "] " + lastProcess.pid());
-                        activeJobs.add(new BackgroundJob(assignedJobId, lastProcess.pid(), fullCommandString, lastProcess));
-                    } else {
-                        // For synchronous pipelines, wait for the *last* command (e.g. head -n 5) to finish execution.
-                        // When head exits, the overall pipeline criteria is fulfilled.
-                        lastProcess.waitFor();
-                        
-                        // Kill preceding streaming commands if they refuse to close (like tail -f)
-                        for (Process p : processes) {
-                            if (p.isAlive()) {
-                                p.destroy();
+                            System.out.println("[" + assignedJobId + "] " + lastProcess.pid());
+                            activeJobs.add(new BackgroundJob(assignedJobId, lastProcess.pid(), fullCommandString, lastProcess));
+                        } else {
+                            lastProcess.waitFor();
+                            // Terminate any stuck long-running stages (like tail -f) once the end process terminates
+                            for (Process p : pipeline) {
+                                if (p.isAlive()) {
+                                    p.destroy();
+                                }
                             }
                         }
+                    } catch (Exception e) {
+                        System.out.println("Pipeline execution failed");
                     }
                 }
                 continue;
@@ -415,65 +348,6 @@ public class Main {
                 }
             }
         }
-    }
-
-    private static boolean isLastStageRedirectAndNotStderr(boolean isRedirect, boolean isStderr) {
-        return isRedirect && !isStderr;
-    }
-
-    private static String executeBuiltinToString(List<String> tokens) {
-        String command = tokens.get(0);
-        StringBuilder sb = new StringBuilder();
-
-        if (command.equals("echo")) {
-            for (int i = 1; i < tokens.size(); i++) {
-                sb.append(tokens.get(i));
-                if (i < tokens.size() - 1) sb.append(" ");
-            }
-            sb.append("\n");
-        } 
-        else if (command.equals("pwd")) {
-            sb.append(System.getProperty("user.dir")).append("\n");
-        } 
-        else if (command.equals("type")) {
-            if (tokens.size() > 1) {
-                String cmdToCheck = tokens.get(1);
-                if (cmdToCheck.equals("echo") || cmdToCheck.equals("exit") || 
-                    cmdToCheck.equals("type") || cmdToCheck.equals("pwd") || 
-                    cmdToCheck.equals("cd") || cmdToCheck.equals("jobs")) {
-                    sb.append(cmdToCheck).append(" is a shell builtin\n");
-                } else {
-                    String pathEnv = System.getenv("PATH");
-                    String executablePath = findInPath(cmdToCheck, pathEnv);
-                    if (executablePath != null) {
-                        sb.append(cmdToCheck).append(" is ").append(executablePath).append("\n");
-                    } else {
-                        sb.append(cmdToCheck).append(": not found\n");
-                    }
-                }
-            }
-        } 
-        else if (command.equals("jobs")) {
-            int totalJobs = activeJobs.size();
-            int currentIndex = 0;
-            for (BackgroundJob job : activeJobs) {
-                String marker = " ";
-                if (currentIndex == totalJobs - 1) marker = "+";
-                else if (currentIndex == totalJobs - 2) marker = "-";
-                
-                String baseCmd = job.commandString;
-                if (baseCmd.endsWith(" &")) baseCmd = baseCmd.substring(0, baseCmd.length() - 2).trim();
-                else if (baseCmd.endsWith("&")) baseCmd = baseCmd.substring(0, baseCmd.length() - 1).trim();
-
-                if (job.process.isAlive()) {
-                    sb.append("[").append(job.id).append("]").append(marker).append("   Running                 ").append(baseCmd).append(" &\n");
-                } else {
-                    sb.append("[").append(job.id).append("]").append(marker).append("  Done                 ").append(baseCmd).append("\n");
-                }
-                currentIndex++;
-            }
-        }
-        return sb.toString();
     }
 
     private static List<String> parseArguments(String commandPart) {
