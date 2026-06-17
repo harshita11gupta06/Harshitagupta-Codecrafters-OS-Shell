@@ -1,5 +1,4 @@
 
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -100,6 +99,12 @@ public class Main {
             }
             else if (command.equals("cd")) {
                 String targetDir = tokens.size() > 1 ? tokens.get(1) : System.getenv("HOME");
+                
+                // EXPAND HOME DIRECTORY (~ tilde expansion)
+                if (targetDir.equals("~")) {
+                    targetDir = System.getenv("HOME");
+                }
+                
                 File directory = new File(targetDir);
                 if (directory.exists() && directory.isDirectory()) {
                     System.setProperty("user.dir", directory.getAbsolutePath());
@@ -165,7 +170,6 @@ public class Main {
         }
     }
 
-    // Helper method to parse strings supporting single and double quotes
     private static List<String> parseArguments(String commandPart) {
         List<String> tokens = new ArrayList<>();
         StringBuilder currentToken = new StringBuilder();
@@ -181,7 +185,6 @@ public class Main {
                 escaped = false;
             } else if (c == '\\' && !inSingleQuotes) {
                 if (inDoubleQuotes) {
-                    // Inside double quotes, only specific characters can be escaped
                     if (i + 1 < commandPart.length()) {
                         char next = commandPart.charAt(i + 1);
                         if (next == '$' || next == '`' || next == '"' || next == '\\' || next == '\n') {
