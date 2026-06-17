@@ -1,5 +1,4 @@
 
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -25,29 +24,44 @@ public class Main {
             } 
 
             // --- REDIRECTION HANDLING ---
-            boolean isAppendRedirect = false;
+            boolean isRedirect = false;
+            boolean shouldAppend = false;
             String outputFile = null;
             String commandPart = input;
 
-            // Check for >> or 1>>
+            // Check for append or overwrite operators
             if (input.contains(" >> ")) {
-                isAppendRedirect = true;
+                isRedirect = true;
+                shouldAppend = true;
                 int idx = input.indexOf(" >> ");
                 commandPart = input.substring(0, idx).trim();
                 outputFile = input.substring(idx + 4).trim();
             } else if (input.contains(" 1>> ")) {
-                isAppendRedirect = true;
+                isRedirect = true;
+                shouldAppend = true;
                 int idx = input.indexOf(" 1>> ");
                 commandPart = input.substring(0, idx).trim();
                 outputFile = input.substring(idx + 5).trim();
+            } else if (input.contains(" > ")) {
+                isRedirect = true;
+                shouldAppend = false;
+                int idx = input.indexOf(" > ");
+                commandPart = input.substring(0, idx).trim();
+                outputFile = input.substring(idx + 3).trim();
+            } else if (input.contains(" 1> ")) {
+                isRedirect = true;
+                shouldAppend = false;
+                int idx = input.indexOf(" 1> ");
+                commandPart = input.substring(0, idx).trim();
+                outputFile = input.substring(idx + 4).trim();
             }
             // -----------------------------
 
             // 2. Check for echo
             if (commandPart.startsWith("echo ")) {
                 String message = commandPart.substring(5);
-                if (isAppendRedirect) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, true))) {
+                if (isRedirect) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
                         writer.println(message);
                     }
                 } else {
@@ -57,8 +71,8 @@ public class Main {
             // 3. Check for pwd
             else if (commandPart.equals("pwd")) {
                 String currentDir = System.getProperty("user.dir");
-                if (isAppendRedirect) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, true))) {
+                if (isRedirect) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
                         writer.println(currentDir);
                     }
                 } else {
@@ -94,8 +108,8 @@ public class Main {
                     }
                 }
 
-                if (isAppendRedirect) {
-                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, true))) {
+                if (isRedirect) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile, shouldAppend))) {
                         writer.println(result);
                     }
                 } else {
@@ -121,9 +135,12 @@ public class Main {
                         ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
                         pb.directory(new File(System.getProperty("user.dir")));
                         
-                        if (isAppendRedirect) {
-                            // Redirect standard output to append mode for the file
-                            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(new File(outputFile)));
+                        if (isRedirect) {
+                            if (shouldAppend) {
+                                pb.redirectOutput(ProcessBuilder.Redirect.appendTo(new File(outputFile)));
+                            } else {
+                                pb.redirectOutput(ProcessBuilder.Redirect.to(new File(outputFile)));
+                            }
                             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                             pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
                         } else {
