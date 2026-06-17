@@ -26,11 +26,18 @@ public class Main {
                 String message = input.substring(5);
                 System.out.println(message);
             } 
-            // 3. Check for type
+            // 3. Check for pwd
+            else if (input.equals("pwd")) {
+                // Fetch and print the current working directory
+                String currentDir = System.getProperty("user.dir");
+                System.out.println(currentDir);
+            }
+            // 4. Check for type (Make sure to update type to recognize "pwd" too!)
             else if (input.startsWith("type ")) {
                 String commandToCheck = input.substring(5).trim();
                 
-                if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || commandToCheck.equals("type")) {
+                if (commandToCheck.equals("echo") || commandToCheck.equals("exit") || 
+                    commandToCheck.equals("type") || commandToCheck.equals("pwd")) {
                     System.out.println(commandToCheck + " is a shell builtin");
                 } else {
                     String pathEnv = System.getenv("PATH");
@@ -43,9 +50,8 @@ public class Main {
                     }
                 }
             } 
-            // 4. Try running it as an external program
+            // 5. Try running it as an external program
             else {
-                // Split the input by spaces to get the command and arguments
                 String[] parts = input.split(" ");
                 String command = parts[0];
                 
@@ -54,24 +60,16 @@ public class Main {
                 
                 if (executablePath != null) {
                     try {
-                        // Reconstruct the full arguments list
                         List<String> commandWithArgs = new ArrayList<>();
-                        // Pro tip: Pass the exact command name instead of full absolute path 
-                        // to perfectly match tester expectations for "Arg #0"
                         commandWithArgs.add(command); 
                         for (int i = 1; i < parts.length; i++) {
                             commandWithArgs.add(parts[i]);
                         }
                         
-                        // Launch the process
                         ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
-                        
-                        // Inherit standard I/O streams so the external program's output 
-                        // prints directly to your shell's console
                         pb.inheritIO();
-                        
                         Process process = pb.start();
-                        process.waitFor(); // Wait for the program to finish running
+                        process.waitFor();
                     } catch (Exception e) {
                         System.out.println(command + ": command not found");
                     }
