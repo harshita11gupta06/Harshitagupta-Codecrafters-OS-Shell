@@ -19,31 +19,51 @@ public class Main {
             List<String> parsedArgs = parseInput(input);
             if (parsedArgs.isEmpty()) continue;
             
-            // NEW: Search for standard output redirection (> or 1>)
-            String redirectFile = null;
+            String stdoutFile = null;
+            String stderrFile = null;
+            
             for (int i = 0; i < parsedArgs.size(); i++) {
                 String arg = parsedArgs.get(i);
                 if (arg.equals(">") || arg.equals("1>")) {
                     if (i + 1 < parsedArgs.size()) {
-                        redirectFile = parsedArgs.get(i + 1);
-                        // Remove the operator and the filename from our args list
-                        parsedArgs.subList(i, i + 2).clear();
-                        break;
+                        stdoutFile = parsedArgs.get(i + 1);
+                        parsedArgs.remove(i + 1);
+                        parsedArgs.remove(i);
+                        i--; 
+                    }
+                } else if (arg.equals("2>")) {
+                    if (i + 1 < parsedArgs.size()) {
+                        stderrFile = parsedArgs.get(i + 1);
+                        parsedArgs.remove(i + 1);
+                        parsedArgs.remove(i);
+                        i--; 
                     }
                 }
             }
             
             if (parsedArgs.isEmpty()) continue;
+
+            // NEW FIX: Create the files immediately so they exist even if no output/error is written!
+            if (stdoutFile != null) {
+                File f = new File(stdoutFile);
+                if (f.getParentFile() != null) f.getParentFile().mkdirs();
+                Files.writeString(f.toPath(), "");
+            }
+            if (stderrFile != null) {
+                File f = new File(stderrFile);
+                if (f.getParentFile() != null) f.getParentFile().mkdirs();
+                Files.writeString(f.toPath(), "");
+            }
+
             String cmd = parsedArgs.get(0);
             
             if (cmd.equals("exit")) {
                 break;
             } else if (cmd.equals("echo")) {
                 String out = String.join(" ", parsedArgs.subList(1, parsedArgs.size()));
-                // Use our new helper method instead of System.out.println
-                writeOutput(out, redirectFile);
+                writeOutput(out, stdoutFile);
             } else if (cmd.equals("pwd")) {
-                writeOutput(System.getProperty("user.dir"), redirectFile);
+                writeOutput(System.getProperty("user.dir"), stdoutFile);
             } else if (cmd.equals("cd")) {
                 String dir = parsedArgs.size() > 1 ? parsedArgs.get(1) : "~";
                 if (dir.equals("~")) {
@@ -55,8 +75,7 @@ public class Main {
                     if (Files.isDirectory(newPath)) {
                         System.setProperty("user.dir", newPath.toString());
                     } else {
-                        // Error messages ALWAYS stay on the terminal
-                        System.out.println("cd: " + dir + ": No such file or directory"); 
+                        writeError("cd: " + dir + ": No such file or directory", stderrFile);
                     }
                 }
             } else if (cmd.equals("type")) {
@@ -64,13 +83,13 @@ public class Main {
                 String target = parsedArgs.get(1);
                 
                 if (target.equals("echo") || target.equals("exit") || target.equals("type") || target.equals("pwd") || target.equals("cd")) {
-                    writeOutput(target + " is a shell builtin", redirectFile);
+                    writeOutput(target + " is a shell builtin", stdoutFile);
                 } else {
                     String path = getPath(target);
                     if (path != null) {
-                        writeOutput(target + " is " + path, redirectFile);
+                        writeOutput(target + " is " + path, stdoutFile);
                     } else {
-                        System.out.println(target + ": not found"); // Error goes to terminal
+                        writeError(target + ": not found", stderrFile);
                     }
                 }
             } else {
@@ -80,36 +99,36 @@ public class Main {
                         ProcessBuilder pb = new ProcessBuilder(parsedArgs);
                         pb.directory(new File(System.getProperty("user.dir")));
                         
-                        // Handle external program redirection
-                        if (redirectFile != null) {
-                            File f = new File(redirectFile);
-                            if (f.getParentFile() != null) f.getParentFile().mkdirs();
-                            pb.redirectOutput(f); // Redirects stdout to the file
+                        if (stdoutFile != null) {
+                            File f = new File(stdoutFile);
+                            pb.redirectOutput(f);
                         } else {
-                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT); // Stays on terminal
+                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                         }
                         
-                        // Errors always stay on the terminal
-                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        if (stderrFile != null) {
+                            File f = new File(stderrFile);
+                            pb.redirectError(f);
+                        } else {
+                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        }
                         
                         Process process = pb.start();
                         process.waitFor();
                     } catch (Exception e) {
-                        System.out.println(cmd + ": command not found");
+                        writeError(cmd + ": command not found", stderrFile);
                     }
                 } else {
-                    System.out.println(cmd + ": command not found");
+                    writeError(cmd + ": command not found", stderrFile);
                 }
             }
         }
     }
 
-    // NEW HELPER: Handles printing to terminal OR saving to a file
     private static void writeOutput(String output, String redirectFile) {
         if (redirectFile != null) {
             try {
                 File f = new File(redirectFile);
-                if (f.getParentFile() != null) f.getParentFile().mkdirs();
                 Files.writeString(f.toPath(), output + "\n");
             } catch (Exception e) {
                 System.out.println("Error writing to file");
@@ -119,7 +138,19 @@ public class Main {
         }
     }
 
-    // UNCHANGED PARSER
+    private static void writeError(String errorMsg, String redirectFile) {
+        if (redirectFile != null) {
+            try {
+                File f = new File(redirectFile);
+                Files.writeString(f.toPath(), errorMsg + "\n");
+            } catch (Exception e) {
+                System.out.println("Error writing to file");
+            }
+        } else {
+            System.out.println(errorMsg);
+        }
+    }
+
     private static List<String> parseInput(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder currentArg = new StringBuilder();
@@ -177,7 +208,6 @@ public class Main {
         return args;
     }
 
-    // UNCHANGED HELPER
     private static String getPath(String cmd) {
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {
