@@ -1,4 +1,5 @@
 
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -100,14 +101,21 @@ public class Main {
             else if (command.equals("cd")) {
                 String targetDir = tokens.size() > 1 ? tokens.get(1) : System.getenv("HOME");
                 
-                // EXPAND HOME DIRECTORY (~ tilde expansion)
                 if (targetDir.equals("~")) {
                     targetDir = System.getenv("HOME");
                 }
                 
-                File directory = new File(targetDir);
+                // Resolve path relative to our simulated working directory if it's not absolute
+                File directory;
+                if (targetDir.startsWith("/")) {
+                    directory = new File(targetDir);
+                } else {
+                    directory = new File(System.getProperty("user.dir"), targetDir);
+                }
+                
                 if (directory.exists() && directory.isDirectory()) {
-                    System.setProperty("user.dir", directory.getAbsolutePath());
+                    // Use getCanonicalPath() to correctly evaluate and remove '.' and '..'
+                    System.setProperty("user.dir", directory.getCanonicalPath());
                 } else {
                     shellOut.accept("cd: " + targetDir + ": No such file or directory");
                 }
