@@ -79,7 +79,7 @@ public class Main {
         }
     }
 
-    // UPDATED HELPER: Now handles both Single and Double quotes!
+    // UPDATED HELPER: Now handles Backslashes outside quotes!
     private static List<String> parseInput(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder currentArg = new StringBuilder();
@@ -91,22 +91,25 @@ public class Main {
             char c = input.charAt(i);
 
             if (c == '\'' && !inDoubleQuotes) {
-                // Toggle single quotes only if we aren't inside double quotes
                 inSingleQuotes = !inSingleQuotes;
                 inArg = true; 
             } else if (c == '"' && !inSingleQuotes) {
-                // Toggle double quotes only if we aren't inside single quotes
                 inDoubleQuotes = !inDoubleQuotes;
                 inArg = true;
+            } else if (c == '\\' && !inSingleQuotes && !inDoubleQuotes) {
+                // NEW: Handle backslash escaping outside quotes
+                if (i + 1 < input.length()) {
+                    currentArg.append(input.charAt(i + 1)); // Append the escaped character
+                    i++; // Skip the character we just escaped so the loop doesn't read it again
+                    inArg = true;
+                }
             } else if (c == ' ' && !inSingleQuotes && !inDoubleQuotes) {
-                // If we hit a space AND we aren't in ANY quotes, finish the current argument
                 if (inArg) {
                     args.add(currentArg.toString());
                     currentArg.setLength(0);
                     inArg = false;
                 }
             } else {
-                // Otherwise, add the character to our current argument
                 currentArg.append(c);
                 inArg = true;
             }
