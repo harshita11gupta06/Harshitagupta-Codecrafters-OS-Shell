@@ -9,13 +9,19 @@ public class Main {
             System.out.print("$ ");
             String input = scanner.nextLine();
             
-            // Check if the command is "exit"
+            // 1. Check for exit
             if (input.equals("exit")) {
-                break; // This breaks the while loop and exits the program safely
+                break;
+            } 
+            // 2. Check for echo (note the trailing space so we handle arguments)
+            else if (input.startsWith("echo ")) {
+                String message = input.substring(5);
+                System.out.println(message);
+            } 
+            // 3. Fallback for invalid commands
+            else {
+                System.out.println(input + ": command not found");
             }
-            
-            // Otherwise, treat it as an invalid command
-            System.out.println(input + ": command not found");
         }
     }
 }
