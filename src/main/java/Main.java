@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Scanner;
 
 public class Main {
+    // Keep track of background job sequence numbers
+    private static int jobCounter = 1;
+
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
         
@@ -66,6 +69,17 @@ public class Main {
             if (tokens.isEmpty()) {
                 continue;
             }
+
+            // Check if the command should run in the background
+            boolean isBackground = false;
+            if (tokens.get(tokens.size() - 1).equals("&")) {
+                isBackground = true;
+                tokens.remove(tokens.size() - 1); // Remove the '&' token
+            }
+            
+            if (tokens.isEmpty()) {
+                continue;
+            }
             String command = tokens.get(0);
             // ------------------------------------
 
@@ -119,8 +133,7 @@ public class Main {
                 }
             }
             else if (command.equals("jobs")) {
-                // For this stage, an empty implementation is expected when no background jobs exist.
-                // It should produce no output and return directly to the prompt loop.
+                // Empty for now as per previous stage requirements
             }
             else if (command.equals("type")) {
                 if (tokens.size() > 1) {
@@ -169,7 +182,15 @@ public class Main {
                         }
                         
                         Process process = pb.start();
-                        process.waitFor();
+                        
+                        if (isBackground) {
+                            // Print [JOB_NUMBER] PID and DO NOT wait for process to finish
+                            System.out.println("[" + jobCounter + "] " + process.pid());
+                            jobCounter++;
+                        } else {
+                            // Foreground process: wait normally
+                            process.waitFor();
+                        }
                     } catch (Exception e) {
                         System.out.println(command + ": command not found");
                     }
