@@ -21,7 +21,6 @@ public class Main {
         }
     }
 
-    private static int jobCounter = 1;
     private static final List<BackgroundJob> activeJobs = new ArrayList<>();
 
     public static void main(String[] args) throws Exception {
@@ -51,7 +50,6 @@ public class Main {
                         baseCmd = baseCmd.substring(0, baseCmd.length() - 1).trim();
                     }
                     
-                    // As per requirements, automatic reap outputs go directly to standard output
                     System.out.println("[" + job.id + "]" + marker + "  Done                 " + baseCmd);
                     reapIterator.remove();
                     totalJobsBeforeReap--;
@@ -262,9 +260,25 @@ public class Main {
                         Process process = pb.start();
                         
                         if (isBackground) {
-                            System.out.println("[" + jobCounter + "] " + process.pid());
-                            activeJobs.add(new BackgroundJob(jobCounter, process.pid(), fullCommandString, process));
-                            jobCounter++;
+                            // --- RECYCLING JOB NUMBERS LOGIC ---
+                            int assignedJobId = 1;
+                            while (true) {
+                                boolean idTaken = false;
+                                for (BackgroundJob j : activeJobs) {
+                                    if (j.id == assignedJobId) {
+                                        idTaken = true;
+                                        break;
+                                    }
+                                }
+                                if (!idTaken) {
+                                    break;
+                                }
+                                assignedJobId++;
+                            }
+                            // -----------------------------------
+                            
+                            System.out.println("[" + assignedJobId + "] " + process.pid());
+                            activeJobs.add(new BackgroundJob(assignedJobId, process.pid(), fullCommandString, process));
                         } else {
                             process.waitFor();
                         }
