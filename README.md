@@ -1,34 +1,125 @@
-[![progress-banner](https://backend.codecrafters.io/progress/shell/f21f2a5a-cb2a-42e9-a2f9-25174d9275fc)](https://app.codecrafters.io/users/CodedStars-hub?r=2qF)
+# 🐚 Custom Java Shell
 
-This is a starting point for Java solutions to the
-["Build Your Own Shell" Challenge](https://app.codecrafters.io/courses/shell/overview).
+A fully functional, interactive shell built from scratch in Java. This shell supports advanced features like pipes, redirection, background jobs, raw terminal input handling, and a sophisticated programmable auto-completion system.
 
-In this challenge, you'll build your own POSIX compliant shell that's capable of
-interpreting shell commands, running external programs and builtin commands like
-cd, pwd, echo and more. Along the way, you'll learn about shell command parsing,
-REPLs, builtin commands, and more.
+## 🌟 Key Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+*   **Interactive REPL:** Built with custom character-by-character input using raw terminal mode (`stty -icanon -echo`) to intercept keystrokes in real-time.
+*   **Builtin Commands:** Supports standard builtins including `cd`, `pwd`, `echo`, `type`, `exit`, `jobs`, and `complete`.
+*   **Programmable Autocompletion:** Supports advanced `bash`-style completion. You can register custom completer scripts (`complete -C script cmd`) that the shell invokes with standard environment variables (`COMP_LINE`, `COMP_POINT`).
+*   **Pipes & Redirection:** Full support for `|`, `>`, `>>`, `1>`, `2>`, `2>>` to chain commands and redirect standard output/error to files.
+*   **Background Jobs:** Run long-running processes in the background using `&` and track them with the `jobs` command.
+*   **Executable Resolution:** Dynamically searches the `PATH` environment variable to find and execute binaries.
 
-# Passing the first stage
+---
 
-The entry point for your `shell` implementation is in `src/main/java/Main.java`.
-Study and uncomment the relevant code, then run the command below to execute the
-tests on our servers:
+## 🏗️ Architecture Diagrams
 
-```sh
-codecrafters submit
+### 1. The Core REPL & Execution Loop
+
+This flowchart visualizes the core architecture of the shell, from raw character input to command execution.
+
+```mermaid
+graph TD
+    A([Start Shell]) --> B[Set Terminal to Raw Mode]
+    B --> C((Print Prompt $))
+    C --> D[Read Char from System.in]
+    D --> E{Is Key?}
+    
+    E -- "TAB (\t)" --> F[Autocomplete Engine]
+    F --> D
+    
+    E -- "Normal Char" --> H[Append to Buffer]
+    H --> D
+    
+    E -- "Enter (\n)" --> I[Parse Command Line]
+    
+    I --> J{Contains Pipe | ?}
+    J -- Yes --> K[Execute Pipeline Segments]
+    
+    J -- No --> L[Handle Redirections >, 2>]
+    L --> M{Is Builtin?}
+    
+    M -- Yes --> N[Execute Builtin Command]
+    M -- No --> O[Resolve executable in PATH]
+    O --> P[Spawn Process]
+    
+    K --> Q[Check Background Jobs Status]
+    N --> Q
+    P --> Q
+    
+    Q --> C
 ```
 
-Time to move on to the next stage!
+### 2. The Autocompletion Engine
 
-# Stage 2 & beyond
+The autocomplete engine is one of the most complex parts of the shell. It determines the context of the user's input and routes it to the appropriate completion strategy.
 
-Note: This section is for stages 2 and beyond.
+```mermaid
+sequenceDiagram
+    participant User
+    participant Shell
+    participant CompleterScript as Completer Script
+    participant FS as File System
+    
+    User->>Shell: Presses <TAB>
+    Shell->>Shell: Parse current command string
+    
+    alt Is Programmable Completer Registered?
+        Shell->>CompleterScript: Execute with args & COMP_LINE/COMP_POINT
+        CompleterScript-->>Shell: Returns match(es)
+    else Completing Command Name (No spaces)
+        Shell->>Shell: Filter internal Builtins
+        Shell->>FS: Scan directories in PATH
+        FS-->>Shell: Returns matching executables
+    else Completing File/Directory (Has spaces)
+        Shell->>FS: Scan target directory
+        FS-->>Shell: Returns matching files/folders
+    end
+    
+    alt Exactly 1 match found
+        Shell->>User: Autocomplete word & append trailing space/slash
+    else Multiple matches found (2nd TAB)
+        Shell->>User: Display list of all possibilities
+    end
+```
 
-1. Ensure you have `mvn` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `src/main/java/Main.java`.
-1. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+### 3. Pipeline Execution Flow
+
+Pipelines require orchestrating multiple asynchronous processes and stitching their inputs and outputs together using threads.
+
+```mermaid
+graph LR
+    subgraph Command 1
+        A1[Process A] -->|stdout| B1[InputStream]
+    end
+    
+    subgraph Stream Pump Thread
+        B1 -->|Read/Write| C1[OutputStream]
+    end
+    
+    subgraph Command 2
+        C1 -->|stdin| A2[Process B]
+        A2 -->|stdout| Console
+    end
+    
+    style Stream Pump Thread fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+## 🚀 Getting Started
+
+Ensure you have Java installed on your system.
+
+```bash
+# Compile the shell
+javac src/main/java/Main.java
+
+# Run the shell
+java -cp src/main/java Main
+```
+
+## 🛠️ Technology Stack
+*   **Language:** Java
+*   **Dependencies:** None (Zero-dependency architecture)
+*   **Concurrency:** Standard Java Threads for pipeline stream-pumping.
+*   **System Calls:** Uses `Runtime.getRuntime().exec()` and `ProcessBuilder` for external execution.
